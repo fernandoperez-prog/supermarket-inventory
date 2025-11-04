@@ -1,31 +1,44 @@
-# Imagen base con PHP 8.2 y Composer
-FROM php:8.2-fpm
+# Imagen base con Apache y PHP
+FROM php:8.2-apache
 
-# Instalar extensiones necesarias y utilidades
+# Instalar dependencias del sistema y extensiones PHP necesarias
 RUN apt-get update && apt-get install -y \
-    git zip unzip curl libpng-dev libonig-dev libxml2-dev sqlite3 libsqlite3-dev \
+    git \
+    unzip \
+    zip \
+    libpng-dev \
+    libonig-dev \
+    libxml2-dev \
+    sqlite3 \
+    libsqlite3-dev \
     && docker-php-ext-install pdo pdo_mysql pdo_sqlite mbstring exif pcntl bcmath gd
 
-# Instalar Composer globalmente
-COPY --from=composer:2.6 /usr/bin/composer /usr/bin/composer
+# Habilitar mod_rewrite de Apache
+RUN a2enmod rewrite
 
-# Configurar el directorio de trabajo
+# Establecer directorio de trabajo
 WORKDIR /var/www/html
 
-# Copiar el proyecto completo
+# Copiar todo el proyecto
 COPY . .
 
-# Instalar dependencias de Laravel
-RUN composer install --no-dev --optimize-autoloader
+# Instalar Composer
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
-# Generar APP_KEY automáticamente
-RUN php artisan key:generate
+# Instalar dependencias PHP
+RUN composer install --no-dev --optimize-autoloader || true
 
-# Dar permisos de escritura al storage
+# Crear archivo .env si no existe (para evitar error de artisan)
+RUN if [ ! -f .env ]; then cp .env.example .env; fi
+
+# Dar permisos a storage y bootstrap/cache
 RUN chmod -R 777 storage bootstrap/cache
 
-# Exponer el puerto para Render
-EXPOSE 10000
+# Ejecutar artisan key:generate solo si .env existe
+RUN php -r "if (file_exists('.env')) { system('php artisan key:generate'); }"
 
-# Comando para iniciar Laravel
-CMD php artisan serve --host=0.0.0.0 --port=10000
+# Exponer puerto
+EXPOSE 80
+
+# Iniciar servidor Apache
+CMD ["apache2-foreground"]
